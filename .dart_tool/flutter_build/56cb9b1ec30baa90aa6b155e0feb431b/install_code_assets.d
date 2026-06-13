@@ -1,0 +1,1 @@
+ C:\\Users\\share\\Documents\\tracker-app\\.dart_tool\\flutter_build\\56cb9b1ec30baa90aa6b155e0feb431b\\native_assets.json: 
