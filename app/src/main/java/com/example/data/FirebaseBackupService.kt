@@ -9,12 +9,21 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import com.example.BuildConfig
+
 
 object FirebaseBackupService {
     private const val TAG = "FirebaseBackupService"
-    private const val PROJECT_ID = "ai-study-hub-482505"
-    private const val API_KEY = "AIzaSyA7TE8DO8m4C9HZMy2TSss-gFkl6aC3WD0"
-    private const val BASE_URL = "https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/backups"
+    private val PROJECT_ID = BuildConfig.ANDROID_FIREBASE_PROJECT_ID
+    private val API_KEY = BuildConfig.ANDROID_FIREBASE_API_KEY
+    private val BASE_URL = "https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/backups"
+
+    private fun isConfigured(): Boolean {
+        return PROJECT_ID.isNotEmpty() &&
+               API_KEY.isNotEmpty() &&
+               PROJECT_ID != "YOUR_ANDROID_FIREBASE_PROJECT_ID" &&
+               API_KEY != "YOUR_ANDROID_FIREBASE_API_KEY"
+    }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -24,6 +33,10 @@ object FirebaseBackupService {
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     suspend fun performBackup(backupKey: String, transactions: List<TransactionEntity>, budgets: List<BudgetEntity>): Result<Unit> {
+        if (!isConfigured()) {
+            Log.w(TAG, "Firebase credentials are not configured.")
+            return Result.failure(Exception("Firebase credentials are not configured."))
+        }
         return try {
             val transactionsJson = JSONArray()
             transactions.forEach { tx ->
@@ -93,6 +106,10 @@ object FirebaseBackupService {
     }
 
     suspend fun performRestore(backupKey: String): Result<Pair<List<TransactionEntity>, List<BudgetEntity>>> {
+        if (!isConfigured()) {
+            Log.w(TAG, "Firebase credentials are not configured.")
+            return Result.failure(Exception("Firebase credentials are not configured."))
+        }
         return try {
             val url = "$BASE_URL/$backupKey?key=$API_KEY"
             val request = Request.Builder()

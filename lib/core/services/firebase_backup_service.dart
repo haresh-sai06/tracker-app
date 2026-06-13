@@ -29,9 +29,11 @@ class BackupMetadata {
 }
 
 class FirebaseBackupService {
-  static const String projectId = "transaction-tracker-6f557";
-  static const String apiKey = "AIzaSyB77pObMeuBot5CTyuU3fqn4mGOeFexM-s";
+  static const String projectId = String.fromEnvironment('FLUTTER_FIREBASE_PROJECT_ID');
+  static const String apiKey = String.fromEnvironment('FLUTTER_FIREBASE_API_KEY');
   static const String baseUrl = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/backups";
+
+  static bool get isConfigured => projectId.isNotEmpty && apiKey.isNotEmpty;
 
   static String sanitizeBackupKey(String email) {
     return "google-" + email.replaceAll("@", "-at-").replaceAll(".", "-dot-");
@@ -40,6 +42,10 @@ class FirebaseBackupService {
   /// Check if backup exists.
   /// Returns null if no backup, or BackupMetadata { timestamp, transactionCount } if found.
   static Future<BackupMetadata?> checkBackupExists(String userId) async {
+    if (!isConfigured) {
+      debugPrint("[FirebaseBackupService] Firebase credentials are not configured.");
+      return null;
+    }
     try {
       final key = sanitizeBackupKey(userId);
       final url = Uri.parse("$baseUrl/$key?key=$apiKey");
@@ -83,6 +89,10 @@ class FirebaseBackupService {
   /// Perform cloud backup.
   /// Backs up Transactions, Categories, Accounts, and Wallets to Firestore document.
   static Future<bool> performBackup(String userId) async {
+    if (!isConfigured) {
+      debugPrint("[FirebaseBackupService] Firebase credentials are not configured.");
+      return false;
+    }
     try {
       final key = sanitizeBackupKey(userId);
 
@@ -191,6 +201,10 @@ class FirebaseBackupService {
   /// Perform cloud restore.
   /// Downloads backup document and restores Transactions, Categories, Accounts, and Wallets to local Hive.
   static Future<bool> performRestore(String userId) async {
+    if (!isConfigured) {
+      debugPrint("[FirebaseBackupService] Firebase credentials are not configured.");
+      return false;
+    }
     try {
       final key = sanitizeBackupKey(userId);
       final url = Uri.parse("$baseUrl/$key?key=$apiKey");
