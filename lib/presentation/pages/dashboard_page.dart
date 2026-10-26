@@ -12,6 +12,7 @@ import 'package:tracker_app/core/services/app_health_service.dart';
 import 'package:tracker_app/presentation/providers/wallets_provider.dart';
 import 'package:tracker_app/core/utils/currency_utils.dart';
 import 'package:tracker_app/presentation/widgets/currency_selector_sheet.dart';
+import 'package:tracker_app/presentation/widgets/panel_entrance.dart';
 
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:tracker_app/core/services/gmail_sync_service.dart';
@@ -350,7 +351,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       if (state.recentTransactions.isEmpty) ...[
                         // Specifc zero-transactions empty State for active wallet
                         SliverToBoxAdapter(
-                          child: Padding(
+                          child: PanelEntrance(
+                            child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
                             child: Card(
                               elevation: 0,
@@ -400,6 +402,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                               ),
                             ),
                           ),
+                          ),
                         ),
                       ] else ...[
                         // 3. Net Worth & Account Balances PageView
@@ -446,7 +449,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
                         // 4. Summary cards row
                         SliverToBoxAdapter(
-                          child: _buildSummaryCardsRow(context, state.summary, currencySymbol),
+                          child: PanelEntrance(
+                            child: _buildSummaryCardsRow(context, state.summary, currencySymbol),
+                          ),
                         ),
 
                         // 5. Recent Transactions section header & Link
@@ -979,25 +984,24 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       );
     }
 
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          final tx = recentTransactions[index];
-          final isDebit = tx.type == TransactionType.debit;
+    final tiles = <Widget>[];
+    for (final tx in recentTransactions) {
+      final isDebit = tx.type == TransactionType.debit;
 
-          final category = categories.firstWhere(
-            (c) => c.id == tx.category,
-            orElse: () => const Category(
-              id: 'unknown',
-              name: 'Unknown',
-              iconCodePoint: 57935,
-              colorValue: 0xFF607D8B,
-              isDefault: false,
-              isDeleted: false,
-            ),
-          );
+      final category = categories.firstWhere(
+        (c) => c.id == tx.category,
+        orElse: () => const Category(
+          id: 'unknown',
+          name: 'Unknown',
+          iconCodePoint: 57935,
+          colorValue: 0xFF607D8B,
+          isDefault: false,
+          isDeleted: false,
+        ),
+      );
 
-          return Padding(
+      tiles.add(
+        Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
             child: Card(
               margin: EdgeInsets.zero,
@@ -1034,19 +1038,39 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     color: Theme.of(context).colorScheme.primary.withAlpha(180),
                   ),
                 ),
-                trailing: Text(
-                  '${isDebit ? '-' : '+'}$currencySymbol${tx.amount.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: isDebit ? Colors.redAccent : Colors.green,
-                  ),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${isDebit ? '-' : '+'}$currencySymbol${tx.amount.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: isDebit ? Colors.redAccent : Colors.green,
+                      ),
+                    ),
+                    Text(
+                      isDebit ? 'Debit' : 'Credit',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          );
-        },
-        childCount: recentTransactions.length,
+          ),
+      );
+    }
+
+    return SliverToBoxAdapter(
+      child: PanelEntrance(
+        child: Column(
+          children: tiles,
+        ),
       ),
     );
   }
