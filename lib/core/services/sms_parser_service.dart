@@ -39,34 +39,67 @@ class SmsParserService {
     return await compute(_parseSmsIsolate, body);
   }
 
+  /// Synchronous parse used by tests. [parseSms] runs the same function on an isolate.
+  @visibleForTesting
+  static ParsedTransaction? parseSmsBody(String body) => _parseSmsIsolate(body);
+
+  /// Words that mean the message is not a completed movement of money.
+  /// "alert" is intentionally absent: bank apps title real debits and credits
+  /// "Transaction Alert", and the notification parser prefixes that title.
+  static const _hardIgnoreWords = [
+    'otp',
+    'password',
+    'pin',
+    'cancelled',
+    'declined',
+    'unsuccessful',
+    'failed',
+    'bounced',
+  ];
+
+  /// Reminders and requests. These yield to a structured debit or credit match,
+  /// because a completed payment often also says "as requested" or "total due".
+  static const _softIgnoreWords = [
+    'mandate',
+    'code',
+    'statement',
+    'outstanding',
+    'due',
+    'overdue',
+    'reminder',
+    'requested',
+  ];
+
+  static bool _containsWord(String bodyLower, List<String> words) {
+    for (final word in words) {
+      if (RegExp('\\b${RegExp.escape(word)}\\b').hasMatch(bodyLower)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// The heavy parsing function that runs in the isolate.
   static ParsedTransaction? _parseSmsIsolate(String body) {
     if (body.isEmpty) return null;
 
     final bodyLower = body.toLowerCase();
-    
-    // 0. Explicitly Ignore Non-Transactional / Failed Messages
-    final ignoreKeywords = [
-      'mandate', 'otp ', ' otp', 'code', 'password', ' pin', 'alert',
-      'statement', 'outstanding', 'due', 'reminder',
-      'cancelled', 'declined', 'unsuccessful', 'failed', 'bounced',
-      'requested'
-    ];
-    for (final keyword in ignoreKeywords) {
-      if (bodyLower.contains(keyword)) {
-        return null;
-      }
+
+    // OTP, PIN, and failed attempts are never recorded, even when the text
+    // also contains an amount and a debit verb.
+    if (_containsWord(bodyLower, _hardIgnoreWords)) {
+      return null;
     }
 
     // 1. Try Specific Bank Template Regexes
     
     // HDFC Pattern: "Rs.X debited from a/c XX1234" or "Rs.X credited to a/c XX1234"
     final hdfcDebited = RegExp(
-      r'(?:rs\.?|re\.?|inr|rupees?|usd|\$|eur|€)\s*([\d,]+(?:\.\d+)?)\s+(?:debited|debitted)\s+from\s+(?:a/c|acc|account)\s+(?:xx)?(\d{4})(?:\s+to\s+([^,\.]+))?',
+      r'(?:rs\.?|re\.?|inr|rupees?|usd|\$|eur|€)\s*([\d,]+(?:\.\d+)?)\s+(?:debited|debitted)\s+from\s+(?:a/c|acc|account)\s+\**x*(\d{4})(?:\s+to\s+([^,\.]+))?',
       caseSensitive: false,
     );
     final hdfcCredited = RegExp(
-      r'(?:rs\.?|re\.?|inr|rupees?|usd|\$|eur|€)\s*([\d,]+(?:\.\d+)?)\s+(?:credited|creditted)\s+to\s+(?:a/c|acc|account)\s+(?:xx)?(\d{4})',
+      r'(?:rs\.?|re\.?|inr|rupees?|usd|\$|eur|€)\s*([\d,]+(?:\.\d+)?)\s+(?:credited|creditted)\s+to\s+(?:a/c|acc|account)\s+\**x*(\d{4})',
       caseSensitive: false,
     );
 
@@ -78,7 +111,7 @@ class SmsParserService {
 
     // ICICI Pattern: "Rs X spent on ICICI Bank Card XX1234 at MERCHANT" -> debited
     final iciciSpent = RegExp(
-      r'(?:rs\.?|re\.?|inr|rupees?|usd|\$|eur|€)\s*([\d,]+(?:\.\d+)?)\s+spent\s+on\s+icici\s+bank\s+(?:card|a/c)\s+(?:xx)?(\d{4})\s+at\s+([^,\.]+)',
+      r'(?:rs\.?|re\.?|inr|rupees?|usd|\$|eur|€)\s*([\d,]+(?:\.\d+)?)\s+spent\s+on\s+icici\s+bank\s+(?:card|a/c)\s+\**x*(\d{4})\s+at\s+([^,\.]+)',
       caseSensitive: false,
     );
 
@@ -199,6 +232,13 @@ class SmsParserService {
       );
     }
 
+    // Statements, dues, and one-time codes are not completed payments.
+    // Structured matches above already returned, so "total due" on a real
+    // debit does not land here.
+    if (_containsWord(bodyLower, _softIgnoreWords)) {
+      return null;
+    }
+
     // 2. Generic Fallback Parser
     double amount = 0.0;
     TransactionType? type;
@@ -250,7 +290,7 @@ class SmsParserService {
 
     // Detect Account Info
     String? accountNum;
-    final accReg = RegExp(r'\b(?:a/c|card|acc|x+)\s*(?:xx)?(\d{4})\b', caseSensitive: false);
+    final accReg = RegExp(r'\b(?:a/c|account|card|acc)\s+\**x*(\d{4})\b', caseSensitive: false);
     final accMatch = accReg.firstMatch(bodyLower);
     if (accMatch != null) {
       accountNum = accMatch.group(1);
