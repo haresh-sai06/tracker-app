@@ -56,6 +56,38 @@ void main() {
       );
     });
 
+    test('keeps a debit whose footer says to reset the PIN', () {
+      final parsed = SmsParserService.parseSmsBody(
+        'Alert: Rs.500.00 debited from a/c XX1234 to SWIGGY. If this was not you, reset your PIN.',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.amount, 500);
+      expect(parsed.type, TransactionType.debit);
+      expect(parsed.merchantName, 'Swiggy');
+      expect(parsed.accountLastFour, '1234');
+    });
+
+    test('records the debit, not the available balance printed first', () {
+      final parsed = SmsParserService.parseSmsBody(
+        'Avl Bal: Rs.15,230.50. Kotak Bank a/c XX7788 debited by Rs.250.00 at SWIGGY.',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.amount, 250);
+      expect(parsed.type, TransactionType.debit);
+      expect(parsed.accountLastFour, '7788');
+      expect(parsed.bankName, 'Kotak');
+      expect(parsed.merchantName, 'Swiggy');
+    });
+
+    test('still ignores a message that is only about a PIN', () {
+      expect(
+        SmsParserService.parseSmsBody('Your PIN is 482913. Never share it.'),
+        isNull,
+      );
+    });
+
     test('parses an ICICI spend that masks the card with X characters', () {
       final parsed = SmsParserService.parseSmsBody(
         'Rs 199.00 spent on ICICI Bank Card XXXX4412 at BIG BAZAAR',

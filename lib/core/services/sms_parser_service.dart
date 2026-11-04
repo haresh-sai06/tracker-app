@@ -49,7 +49,6 @@ class SmsParserService {
   static const _hardIgnoreWords = [
     'otp',
     'password',
-    'pin',
     'cancelled',
     'declined',
     'unsuccessful',
@@ -239,18 +238,23 @@ class SmsParserService {
       return null;
     }
 
+    // "Reset your PIN" is a footer on real debits. Those already matched a
+    // bank template above. A message that is only about a PIN is not a payment.
+    if (_containsWord(bodyLower, const ['pin'])) {
+      return null;
+    }
+
     // 2. Generic Fallback Parser
     double amount = 0.0;
     TransactionType? type;
     double confidence = 0.0;
 
-    // Detect Amount
+    // Detect Amount. Skip a leading available-balance figure.
     final amountReg = RegExp(r'(?:rs\.?|re\.?|inr|rupees?|usd|\$|eur|€)\s*([\d,]+(?:\.\d+)?)', caseSensitive: false);
-    final amountMatch = amountReg.firstMatch(bodyLower);
-    if (amountMatch != null) {
-      amount = _parseAmount(amountMatch.group(1));
+    amount = _movementAmount(bodyLower);
+    if (amount != 0.0) {
       confidence += 0.4;
-    } else {
+    } else if (!amountReg.hasMatch(bodyLower)) {
       // Direct raw numbers that are reasonably large or isolated with decimal
       final fallbackAmountReg = RegExp(r'\b([\d,]+\.\d{2})\b');
       final fallbackAmountMatch = fallbackAmountReg.firstMatch(bodyLower);
@@ -349,6 +353,42 @@ class SmsParserService {
     }
 
     return null;
+  }
+
+  /// Currency figure attached to the payment verb, ignoring an available balance.
+  /// Texts often print "Avl Bal Rs.15,230" before "debited by Rs.250".
+  static double _movementAmount(String bodyLower) {
+    final amountReg = RegExp(
+      r'(?:rs\.?|re\.?|inr|rupees?|usd|\$|eur|€)\s*([\d,]+(?:\.\d+)?)',
+      caseSensitive: false,
+    );
+    final verbReg = RegExp(
+      r'\b(debited|debitted|spent|sent|paid|withdrawn|deducted|charged|credited|creditted|received|added|deposited|refunded|reversal)\b',
+      caseSensitive: false,
+    );
+    final balanceLabel = RegExp(r'\b(?:avl|available|bal|balance)\b', caseSensitive: false);
+    final verbAt = verbReg.firstMatch(bodyLower)?.start;
+
+    double? nearest;
+    var nearestDistance = 1 << 30;
+    double? firstPlain;
+    for (final match in amountReg.allMatches(bodyLower)) {
+      final value = _parseAmount(match.group(1));
+      if (value == 0.0) continue;
+      final windowStart = match.start >= 24 ? match.start - 24 : 0;
+      if (balanceLabel.hasMatch(bodyLower.substring(windowStart, match.start))) {
+        continue;
+      }
+      firstPlain ??= value;
+      if (verbAt != null) {
+        final distance = (match.start - verbAt).abs();
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearest = value;
+        }
+      }
+    }
+    return nearest ?? firstPlain ?? 0.0;
   }
 
   static double _parseAmount(String? text) {
